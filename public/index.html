@@ -1,1 +1,31 @@
-
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#15162e">
+  <meta name="description" content="Choisis le prochain thème, pose tes questions et participe au quiz du cours de Torah Moadon.">
+  <title>Le Cours · Moadon</title>
+  <link rel="stylesheet" href="./style.css">
+  <script type="module" src="./app.js"></script>
+</head>
+<body>
+  <header class="masthead">
+    <div class="frame mast-inner">
+      <a class="brand" href="#cours" aria-label="Le Cours Moadon, accueil">
+        <span class="book" aria-hidden="true"></span><span><strong>Le Cours<span class="brand-dot">.</span></strong><small>MOADON</small></span>
+      </a>
+      <nav aria-label="Navigation principale">
+        <a href="#cours" data-link="cours">Le cours</a>
+        <a href="#idees" data-link="idees">Boîte à idées</a>
+        <a href="#perso" data-link="perso">Mon espace</a>
+      </nav>
+      <a href="#admin" class="staff">Équipe</a>
+    </div>
+  </header>
+  <div id="demo-note" class="demo-note" hidden>Mode démo · Les interactions restent sur cet appareil.</div>
+  <main id="content" class="frame" aria-busy="true"><p class="loading">Chargement du cours…</p></main>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <footer class="frame footer"><span>Le Cours · Moadon</span><a href="#admin">Back-office</a></footer>
+</body>
+</html>

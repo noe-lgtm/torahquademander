@@ -111,3 +111,12 @@ audio{max-width:100%}.recording{color:#992640;font-weight:750}.empty{padding-blo
 [data-question-list] .thread[hidden],[data-empty-search][hidden]{display:none}
 audio{max-width:100%;width:100%}
 @media(max-width:560px){.home-hero{display:block;min-height:0}.home-hero h1{font-size:clamp(1.9rem,7vw,2.6rem);max-width:18ch;margin-bottom:17px}.torah-art{display:none}.brand strong{font-size:clamp(.86rem,4vw,1.15rem)}.brand img{width:37px;height:37px}}
+.course-heading{position:relative;margin:18px 0;padding:clamp(24px,5vw,58px);border-radius:18px;background:#19213f;color:#fff7e4;overflow:hidden}
+.course-heading h1,.course-heading h2{position:relative;margin:10px 0;font-size:clamp(2.5rem,8vw,5rem);color:inherit;line-height:1.06}
+.course-heading p,.course-heading a,.course-heading .tag,.topic-preview{position:relative}
+.hanouka-banner{background-image:linear-gradient(90deg,#19213f 40%,#19213f40),url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 500 230'%3E%3Cg fill='none' stroke='%23cfac68' stroke-width='2' opacity='.74'%3E%3Cpath d='M320 206V57m-27 149h54m-27-26q-122 0-122-75m122 50q-92 0-92-55m92 30q-60 0-60-35m60 10q-30 0-30-15m30 90q122 0 122-75m-122 50q92 0 92-55m-92 30q60 0 60-35m-60 10q30 0 30-15'/%3E%3C/g%3E%3Cg fill='%23edcd84'%3E%3Cpath id='f' d='M320 32q-12 16 0 18 12-2 0-18Z'/%3E%3Cuse href='%23f' x='-122' y='49'/%3E%3Cuse href='%23f' x='-92' y='44'/%3E%3Cuse href='%23f' x='-60' y='39'/%3E%3Cuse href='%23f' x='-30' y='34'/%3E%3Cuse href='%23f' x='30' y='34'/%3E%3Cuse href='%23f' x='60' y='39'/%3E%3Cuse href='%23f' x='92' y='44'/%3E%3Cuse href='%23f' x='122' y='49'/%3E%3C/g%3E%3C/svg%3E");background-position:right center;background-size:cover,auto 100%;background-repeat:no-repeat}
+.topic-preview{display:flex;flex-wrap:wrap;gap:8px;padding:0;list-style:none;margin:18px 0}
+.topic-preview li{padding:5px 9px;border:1px solid #edcd8477;border-radius:8px;background:#19213f}
+dialog{width:min(440px,calc(100% - 32px));padding:24px;border:1px solid #d6c9ac;border-radius:16px;color:#19213f;background:#fffdf7}
+dialog::backdrop{background:#101528aa}
+.course-cover{position:absolute;inset:0;object-fit:cover;width:100%;height:100%;opacity:.27;pointer-events:none}

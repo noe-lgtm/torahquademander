@@ -182,25 +182,37 @@ function archiveLinks() {
   const archived = store.sessions.filter(s => s.archived);
   return archived.length ? panelWrap(`<h2>Anciens cours</h2>${archived.map(s=>`<div class="rank-row"><a href="#archive/${s.id}">${h(s.vote.winner || s.title)}</a>${s.resources.published?link('Fiche et ressources','ressources/'+s.id,'outline small'):''}</div>`).join('')}`) : '';
 }
+function courseBanner(s, preview = false) {
+  const hanouka = s.title.trim().toLocaleLowerCase('fr') === 'hanouka';
+  const topics = s.vote.eligible;
+  const status = s.live ? 'Cours en direct' : s.vote.state === 'open' ? 'Vote ouvert' : s.vote.state === 'decision' ? 'Départage en cours' : 'Vote clôturé';
+  const heading = preview ? 'h2' : 'h1';
+  return `<section class="course-heading ${hanouka?'hanouka-banner':''}">
+    ${s.image ? `<img class="course-cover" src="${h(s.image)}" alt="">` : ''}
+    <span class="tag">${status}</span><${heading}>${h(s.title)}</${heading}>
+    <p>${s.courseAt ? date(s.courseAt) : 'Date du cours à venir'}</p>
+    ${preview ? `<ul class="topic-preview">${topics.map(topic=>`<li>${h(topic)}</li>`).join('')}</ul>${link('Découvrir les sujets','cours','lime')}` : s.description ? `<p>${h(s.description)}</p>` : ''}
+  </section>`;
+}
 function home() {
   const s = active();
   const latest = store.sessions.find(session=>session.archived);
   return `<section class="hero home-hero"><div class="hero-copy"><h1>C’est vous qui choisissez le cours !</h1>
     ${s ? link('Découvrir les sujets','cours','lime') : latest?.resources.published ? link('Voir la dernière fiche','ressources/'+latest.id,'lime') : ''}
     </div><img class="torah-art" src="./torah.svg" alt=""></section>
-    ${s?.courseAt ? `<p class="home-date">Prochain cours · <strong>${date(s.courseAt)}</strong></p>` : ''}
+    ${s ? courseBanner(s,true) : ''}
     ${!s && latest ? panelWrap(`<h2>Dernier cours · ${h(latest.title)}</h2>${link('Revoir le cours','archive/'+latest.id,'outline')}`) : ''}`;
 }
 function course() {
   const s = active();
-  return `${s ? `<section class="course-heading"><p>Prochain thème</p><h1>${h(s.title)}</h1><p>${s.courseAt ? date(s.courseAt) : 'Date et heure à venir'}</p>${s.description?`<p>${h(s.description)}</p>`:''}</section>` : ''}
+  return `${s ? courseBanner(s) : ''}
     <div class="layout"><div class="stack">
     ${s ? votePanel(s)+threadsPanel(s)+chatPanel(s) : panelWrap('<h2>Le prochain vote est à venir</h2><p class="muted">Les thèmes proposés par l’équipe apparaîtront ici à l’ouverture du vote.</p>')}
     ${archiveLinks()}
     </div><aside class="stack side">
-    ${panelWrap(`<div class="sidebar-icon lime" aria-hidden="true">✦</div><h3>Le quiz en salle</h3>
+    ${s && s.quiz.stage!=='draft' ? panelWrap(`<div class="sidebar-icon lime" aria-hidden="true">✦</div><h3>Le quiz en salle</h3>
       <p class="muted">${s && s.quiz.stage!=='draft'?'Retrouve le quiz du cours sur ton téléphone.':'Rejoins le quiz depuis ton téléphone dès que l’animateur l’ouvre.'}</p>
-      ${s && s.quiz.stage!=='draft'? link(s.quiz.stage==='results'?'Voir mes résultats':'Rejoindre le quiz','quiz/'+s.id,'light'): '<span class="tag">En attente</span>'}`)}
+      ${s && s.quiz.stage!=='draft'? link(s.quiz.stage==='results'?'Voir mes résultats':'Rejoindre le quiz','quiz/'+s.id,'light'): '<span class="tag">En attente</span>'}`) : ''}
     ${panelWrap(`<div class="sidebar-icon" aria-hidden="true">✎</div><h3>Une idée pour la suite ?</h3><p class="muted">Suggère un thème ou partage un retour à l’équipe Moadon.</p>${link('Proposer une idée','idees','outline')}`)}
     ${s?.resources.published ? panelWrap(`<h3>À retrouver après le cours</h3>${link('Fiche et quiz de révision','ressources/'+s.id,'light')}`) : ''}
     </aside></div>`;
@@ -302,6 +314,7 @@ function management(s) {
     ${v.state === 'open' && demo ? btn('Simuler la clôture du vote','demoClose','light small') : ''}
     ${!s.archived && v.state === 'done' && !quizActive ? '<p>'+btn('Archiver ce cours','archive','outline small',`data-session="${s.id}"`)+'</p>' : ''}`);
   if (!s.archived) body += panelWrap(`<form data-form="courseDate" data-session="${s.id}">${field('Date et heure du cours · heure de Paris','courseAt',`type="datetime-local" required value="${s.courseAt ? parisInput(s.courseAt) : ''}"`)}${submit('Enregistrer la date','outline small')}</form>`);
+  if (!s.archived) body += panelWrap(`<form data-form="courseVisual" data-session="${s.id}">${field('Visuel du cours · adresse HTTPS','image','type="url" maxlength="1000"',s.image)}${submit('Enregistrer le visuel','outline small')}</form>`);
   body += panelWrap(`<h2>Gérer les échanges</h2>
       ${!s.archived?`<form data-form="deadline" data-session="${s.id}">${field('Clôture des contributions · heure de Paris','end',`type="datetime-local" required value="${parisInput(s.questionsEnd)}"`)}${submit('Modifier la clôture','outline small')}</form>`:''}
       ${v.winner ? `<form data-form="after" data-session="${s.id}"><label><input type="checkbox" name="threads" ${s.after.threads?'checked':''}> Rouvrir les fils de questions</label>
@@ -332,7 +345,8 @@ function audioPanel(s) {
     if (!recordings.has(a.recording)) recordings.set(a.recording,[]);
     recordings.get(a.recording).push(a);
   }
-  const data = generatedDraft?.session === s.id ? generatedDraft : s.resources;
+  const draft = generatedDraft?.session === s.id ? generatedDraft : s.resources.audioDraft;
+  const data = draft || s.resources;
   return panelWrap(`<h2>Enregistrement audio</h2><p class="muted">Utilise le micro de cet appareil. Informe les personnes enregistrées avant de démarrer et garde cette page ouverte pendant le cours.</p>
     ${record ? '<p class="recording">Enregistrement en cours · <span id="recordTimer">0:00</span></p>'+btn('Arrêter l’enregistrement','stopRecord','danger') :
       btn('Démarrer l’enregistrement','record','lime',`data-session="${s.id}" ${s.vote.winner?'':'disabled'}`)}
@@ -346,7 +360,7 @@ function audioPanel(s) {
     ${area('Réponses aux questions restées ouvertes','answers',data.answers ?? s.resources.answers,'maxlength="20000"')}
     <details><summary>Transcription (interne)</summary>${area('Texte à relire','transcript',data.transcript,'maxlength="160000" rows="6"')}</details>
     <h3>Quiz de révision</h3>${questionEditor(data.review||[])}
-    <label><input type="checkbox" name="published" ${s.resources.published && !generatedDraft?'checked':''}> Publier la fiche et le quiz sur le site</label>
+    <label><input type="checkbox" name="published" ${s.resources.published && !draft?'checked':''}> Publier la fiche et le quiz sur le site</label>
     ${submit('Enregistrer les ressources','lime')}</form>`);
 }
 function adminPage() {
@@ -425,6 +439,7 @@ main.addEventListener('submit',async event=>{
         render();
       }
     } else if (kind === 'courseDate') await change(kind,{courseAt:fromParis(fields.courseAt)},session,'Date du cours enregistrée.');
+    else if (kind === 'courseVisual') await change(kind,{image:fields.image},session,'Visuel enregistré.');
     else if (kind === 'deadline') await change(kind,{end:fromParis(fields.end)},session,'Clôture mise à jour.');
     else if (kind === 'after') await change(kind,{threads:!!fields.threads,chat:!!fields.chat},session,messages.after);
     else if (kind === 'quizEditor') await change('saveQuiz',{questions:editQuestions(form)},session,'Quiz enregistré.');
@@ -442,7 +457,19 @@ main.addEventListener('click',async event=>{
   if (!target || target.disabled) return;
   const { do:kind,index,id,session,comment } = target.dataset;
   const s = pageSession();
-  if (kind === 'vote') await change('vote',{theme:s.vote.eligible[Number(index)],round:s.vote.round},s.id,'Vote enregistré.');
+  if (kind === 'vote') {
+    const theme = s.vote.eligible[Number(index)];
+    const dialog = document.createElement('dialog');
+    dialog.innerHTML = `<form method="dialog"><h2 id="vote-confirm-title">Confirmer ton vote ?</h2><p>Tu as choisi <strong>${h(theme)}</strong>.</p><div class="inline"><button class="btn outline" value="cancel" autofocus>Revenir</button><button class="btn lime" value="confirm">Confirmer</button></div></form>`;
+    dialog.setAttribute('aria-labelledby','vote-confirm-title');
+    document.body.append(dialog);
+    dialog.addEventListener('close',async ()=>{
+      const confirmed = dialog.returnValue === 'confirm';
+      dialog.remove();
+      if (confirmed && await change('vote',{theme,round:s.vote.round},s.id,'Ton vote est confirmé.')) main.querySelector('[data-do="vote"][aria-pressed="true"]')?.focus();
+    },{once:true});
+    dialog.showModal();
+  }
   else if (kind === 'hanoukaPreset') {
     const form = target.closest('form');
     form.elements.title.value = 'Hanouka';
@@ -544,6 +571,7 @@ async function startRecording(session) {
     const mimeType = ['audio/webm;codecs=opus','audio/mp4','audio/ogg;codecs=opus'].find(t=>MediaRecorder.isTypeSupported(t));
     if (!mimeType) throw new Error('Aucun format audio compatible sur cet appareil.');
     record = {session,stream,mimeType,recording:crypto.randomUUID(),index:0,stopping:false};
+    if (!demo) await request({kind:'courseLive',session,data:{live:true}});
     recordingTime = Date.now();
     statusAudio('');
     recordSegment(record);
@@ -576,6 +604,7 @@ function recordSegment(context) {
       if (!context.stopping && context.index < 240) recordSegment(context);
       else context.stopping = true;
       await save;
+      if (!demo && !context.stopping) queueLiveAudio(context);
       if (context.stopping && context.rec === rec) await finishRecording(context);
     } catch (error) {
       if (context.rec !== rec && context.rec.state !== 'inactive') stopRecording();
@@ -597,9 +626,18 @@ async function finishRecording(context) {
   record = undefined;
   recordingTime = undefined;
   context.stream.getTracks().forEach(track=>track.stop());
-  statusAudio('Enregistrement terminé.');
+  statusAudio('Enregistrement terminé. Préparation de la fiche…');
   render();
-  if (!demo) await uploadPending(context.session);
+  if (!demo) {
+    await context.processing;
+    try {
+      await request({kind:'courseLive',session:context.session,data:{live:false}});
+      await processLiveAudio(context,true);
+    } catch (error) {
+      statusAudio('Traitement interrompu. Utilise la reprise des transferts ou relance la génération.');
+      notify(error.message,true);
+    }
+  }
 }
 function readBase64(blob) {
   return new Promise((resolve,reject)=>{
@@ -608,6 +646,31 @@ function readBase64(blob) {
     reader.onerror = () => reject(reader.error);
     reader.readAsDataURL(blob);
   });
+}
+function queueLiveAudio(context) {
+  if (context.processing) return;
+  context.processing = processLiveAudio(context).catch(error=>{
+    statusAudio('Traitement audio en attente : '+error.message);
+  }).finally(()=>{context.processing = undefined;});
+}
+async function processLiveAudio(context, finished = false) {
+  transfers = true;
+  try {
+    const items = (await allSegments()).filter(a=>a.recording===context.recording).sort((a,b)=>a.index-b.index);
+    for (const {session,recording,index,mime,blob,key} of items) {
+      const {path} = await request({kind:'upload',session,recording,index,mime,base64:await readBase64(blob)},'audio');
+      await request({kind:'transcribe',session,path},'audio');
+      if ((index+1)%3===0) await request({kind:'liveQuiz',session,recording,index},'audio');
+      await deleteSegment(key);
+    }
+    if (finished) {
+      if (context.index%3!==0) await request({kind:'liveQuiz',session:context.session,recording:context.recording,index:context.index-1},'audio');
+      const draft = await request({kind:'generate',session:context.session,recording:context.recording,persistDraft:true},'audio');
+      generatedDraft = {...draft,session:context.session};
+      statusAudio('Fiche et quiz de révision prêts à relire.');
+    } else if (items.length) statusAudio('Transcription en cours. Les questions arrivent dans l’onglet Quiz.');
+    await refresh();
+  } finally { transfers = false; }
 }
 async function uploadPending(session) {
   if (transfers || record || demo) return;

@@ -93,6 +93,16 @@ export function action(db, input, actor, isAdmin, now = Date.now()) {
       need(vote.eligible.includes(data.theme), 'Thème indisponible.');
       vote.ballots[actor] = data.theme;
       break;
+    case 'courseVisual': {
+      const image = value(data.image, 1000);
+      need(!s.archived && (!image || URL.canParse(image) && new URL(image).protocol === 'https:'), 'Saisis une adresse HTTPS valide.');
+      s.image = image;
+      break;
+    }
+    case 'courseLive':
+      need(!s.archived && vote.winner, 'Le cours doit avoir un sous-thème retenu.');
+      s.live = data.live === true;
+      break;
     case 'courseDate': {
       const courseAt = Number(data.courseAt);
       need(!s.archived && Number.isFinite(courseAt) && courseAt > now, 'Saisis une date de cours à venir.');
@@ -196,6 +206,7 @@ export function action(db, input, actor, isAdmin, now = Date.now()) {
       s.resources.summary = value(data.summary, 30000);
       s.resources.review = questionList(data.review ?? [], 15);
       if (typeof data.transcript === 'string') s.resources.transcript = value(data.transcript, 160000);
+      delete s.resources.audioDraft;
       s.resources.published = data.published === true;
       need(!s.resources.published || s.resources.summary || s.resources.review.length || s.resources.answers || s.resources.audioUrl, 'Ajoute une fiche ou un quiz avant de publier.');
       if (s.resources.published && vote.state !== 'done') throw new Invalid('Le thème doit être choisi avant publication.');
@@ -241,7 +252,7 @@ export function view(db, actor, admin, now = Date.now()) {
       const scoredCount = reveal ? q.questions.length : q.index + 1;
       const score = entry => q.questions.slice(0, scoredCount).reduce((total, question, i) => total + Number(entry.answers[i] === question.correct), 0);
       return {
-        id: s.id, title: s.title, description: s.description, courseAt: s.courseAt, hooks: s.hooks, archived: !!s.archived,
+        id: s.id, title: s.title, description: s.description, courseAt: s.courseAt, live: !s.archived && s.live === true, image: s.image, hooks: s.hooks, archived: !!s.archived,
         questionsEnd: s.questionsEnd, threadsOpen: threadsOpen(s, now), threads,
         vote: {
           state: v.state, end: v.end, eligible: v.eligible, round: v.round,
@@ -265,6 +276,7 @@ export function view(db, actor, admin, now = Date.now()) {
         },
         resources: {
           published: r.published,
+          audioDraft: admin ? r.audioDraft : undefined,
           answers: admin || r.published ? r.answers : '',
           audioUrl: admin || r.published ? r.audioUrl : '',
           summary: admin || r.published ? r.summary : '',

@@ -40,8 +40,7 @@ export function advance(db, now = Date.now()) {
   return true;
 }
 
-const threadsOpen = (s, now) => !!s.vote.winner &&
-  (s.after.threads || (!s.archived && now < s.questionsEnd));
+const threadsOpen = (s, now) => s.after.threads || (!s.archived && now < s.questionsEnd);
 
 export function action(db, input, actor, isAdmin, now = Date.now()) {
   const { kind, data = {} } = input;
@@ -62,9 +61,11 @@ export function action(db, input, actor, isAdmin, now = Date.now()) {
     need(questionsEnd > end + hours * 3600000 && questionsEnd < now + 366 * 86400000, 'Prévois une clôture des questions après la fin possible du second tour.');
     const themes = Array.isArray(data.themes) ? data.themes.map(t => value(t, 80)).filter(Boolean) : [];
     need(themes.length >= 2 && themes.length <= 12 && new Set(themes.map(t => t.toLowerCase())).size === themes.length, 'Ajoute entre 2 et 12 thèmes distincts.');
+    const courseAt = data.courseAt == null ? null : Number(data.courseAt);
+    need(courseAt == null || Number.isFinite(courseAt) && courseAt > now, 'Choisis une date de cours à venir.');
     const title = required(data.title, 100, 'Donne un titre au cours.');
     db.sessions.unshift({
-      id: id(), title, description: value(data.description, 450), questionsEnd, themes,
+      id: id(), title, courseAt, hooks: Object.fromEntries(themes.map(t => [t, value(data.hooks?.[t], 220)])), description: value(data.description, 450), questionsEnd, themes,
       vote: { state: 'open', end, eligible: themes, round: 1, runoffMs: hours * 3600000, ballots: {} },
       threads: [], after: { threads: false, chat: false, messages: [] },
       quiz: { questions: [], stage: 'draft', index: -1, entries: {} },
@@ -90,9 +91,14 @@ export function action(db, input, actor, isAdmin, now = Date.now()) {
     case 'vote':
       need(!s.archived && vote.state === 'open' && vote.round === data.round && now < vote.end, 'Ce tour est terminé.');
       need(vote.eligible.includes(data.theme), 'Thème indisponible.');
-      need(!vote.ballots[actor], 'Ton vote a déjà été enregistré pour ce tour.');
       vote.ballots[actor] = data.theme;
       break;
+    case 'courseDate': {
+      const courseAt = Number(data.courseAt);
+      need(!s.archived && Number.isFinite(courseAt) && courseAt > now, 'Saisis une date de cours à venir.');
+      s.courseAt = courseAt;
+      break;
+    }
     case 'pick':
       need(!s.archived && vote.state === 'decision' && vote.eligible.includes(data.theme), 'Choisis parmi les thèmes proposés au départage.');
       vote.state = 'done';
@@ -118,6 +124,7 @@ export function action(db, input, actor, isAdmin, now = Date.now()) {
       if (kind === 'support') {
         t.supporters = t.supporters.includes(actor) ? t.supporters.filter(a => a !== actor) : [...t.supporters, actor];
       } else {
+        need(isAdmin, 'Les réponses sont réservées à l’équipe.');
         need(t.comments.length < 150 && t.comments.filter(x => x.actor === actor).length < 15, 'Limite de commentaires atteinte.');
         t.comments.push({ id: id(), actor, text: required(data.text, 1000, 'Écris ton commentaire.'), name: value(data.name, 50), at: now, official: isAdmin, hidden: false });
       }
@@ -182,11 +189,15 @@ export function action(db, input, actor, isAdmin, now = Date.now()) {
       q.entries[actor].answers[q.index] = data.choice;
       break;
     case 'saveResources':
+      s.resources.answers = value(data.answers, 20000);
+      const audioUrl = value(data.audioUrl, 2000);
+      need(!audioUrl || URL.canParse(audioUrl) && new URL(audioUrl).protocol === 'https:', 'Saisis un lien audio HTTPS valide.');
+      s.resources.audioUrl = audioUrl;
       s.resources.summary = value(data.summary, 30000);
       s.resources.review = questionList(data.review ?? [], 15);
       if (typeof data.transcript === 'string') s.resources.transcript = value(data.transcript, 160000);
       s.resources.published = data.published === true;
-      need(!s.resources.published || s.resources.summary || s.resources.review.length, 'Ajoute une fiche ou un quiz avant de publier.');
+      need(!s.resources.published || s.resources.summary || s.resources.review.length || s.resources.answers || s.resources.audioUrl, 'Ajoute une fiche ou un quiz avant de publier.');
       if (s.resources.published && vote.state !== 'done') throw new Invalid('Le thème doit être choisi avant publication.');
       break;
     case 'review': {
@@ -226,15 +237,17 @@ export function view(db, actor, admin, now = Date.now()) {
         return { ...item, support: supporters.length, supported: supporters.includes(actor), comments: comments.filter(c => admin || !c.hidden).map(clean) };
       });
       const own = q.entries[actor];
-      const score = entry => q.questions.reduce((total, question, i) => total + Number(entry.answers[i] === question.correct), 0);
+      const scoreVisible = reveal || q.stage === 'locked';
+      const scoredCount = reveal ? q.questions.length : q.index + 1;
+      const score = entry => q.questions.slice(0, scoredCount).reduce((total, question, i) => total + Number(entry.answers[i] === question.correct), 0);
       return {
-        id: s.id, title: s.title, description: s.description, archived: !!s.archived,
+        id: s.id, title: s.title, description: s.description, courseAt: s.courseAt, hooks: s.hooks, archived: !!s.archived,
         questionsEnd: s.questionsEnd, threadsOpen: threadsOpen(s, now), threads,
         vote: {
           state: v.state, end: v.end, eligible: v.eligible, round: v.round,
           winner: v.winner, voted: v.ballots[actor],
           history: v.round === 2 ? [v.firstBallots?.[actor], v.ballots[actor]] : [v.ballots[actor]],
-          totals: admin || v.state !== 'open' ? Object.fromEntries(v.eligible.map(t => [t, Object.values(v.ballots).filter(x => x === t).length])) : null
+          totals: admin || v.state !== 'open' || v.ballots[actor] ? Object.fromEntries((v.round === 1 ? s.themes : s.themes.filter(t => v.eligible.includes(t) || Object.values(v.ballots).includes(t))).map(t => [t, Object.values(v.ballots).filter(x => x === t).length])) : null
         },
         after: { threads: s.after.threads, chat: s.after.chat, messages: s.after.messages.filter(m => admin || !m.hidden).map(clean) },
         quiz: {
@@ -244,13 +257,16 @@ export function view(db, actor, admin, now = Date.now()) {
           participants: Object.keys(q.entries).length,
           responses: Object.values(q.entries).filter(e => e.answers[q.index] != null).length,
           joined: own?.name, choice: own?.answers[q.index],
-          score: reveal && own ? score(own) : undefined,
+          scoredCount,
+          score: scoreVisible && own ? score(own) : undefined,
           results: reveal ? q.questions.map((question, i) => ({ ...question, totals: question.options.map((_, index) => Object.values(q.entries).filter(e => e.answers[i] === index).length) })) : null,
-          ranking: reveal ? Object.values(q.entries).map(e => ({ name:e.name, score: score(e) })).sort((a,b) => b.score - a.score || a.name.localeCompare(b.name,'fr')) : null,
+          ranking: scoreVisible ? Object.values(q.entries).map(e => ({ name:e.name, score: score(e) })).sort((a,b) => b.score - a.score || a.name.localeCompare(b.name,'fr')) : null,
           questions: admin ? q.questions : undefined
         },
         resources: {
           published: r.published,
+          answers: admin || r.published ? r.answers : '',
+          audioUrl: admin || r.published ? r.audioUrl : '',
           summary: admin || r.published ? r.summary : '',
           review: admin ? r.review : r.published ? r.review.map(({text,options}) => ({text,options})) : [],
           transcript: admin ? r.transcript : undefined,

@@ -94,3 +94,20 @@ audio{max-width:100%}.recording{color:#992640;font-weight:750}.empty{padding-blo
 @media(max-width:810px){.hero-art{right:-122px;opacity:.55}.layout{grid-template-columns:minmax(0,1fr)}.side{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}.side>*+*{margin-top:0}}
 @media(max-width:560px){.frame{width:calc(100% - 30px)}.mast-inner{min-height:0;padding:13px 0 8px;display:grid;grid-template-columns:1fr auto;gap:8px}.mast-inner nav{grid-row:2;grid-column:1/-1;gap:4px}.staff{grid-column:2;grid-row:1}.mast-inner nav a{padding:7px 9px}.hero{min-height:246px;padding:25px 21px;border-radius:17px}.hero-art{right:-198px;opacity:.37}.hero h1{font-size:clamp(2.25rem,9.6vw,3.35rem)}.hero p{max-width:300px}.steps{margin:15px 0}.steps li{font-size:.77rem;padding:9px 5px;gap:4px}.step-mark{width:18px;height:18px;flex:0 0 18px;font-size:.65rem}main.frame{margin-top:18px}.panel{padding:18px 15px;border-radius:13px}.panel h2{font-size:1.4rem}.layout{gap:14px}.side{grid-template-columns:1fr}.choices,.form-grid{grid-template-columns:1fr}}
 @media print{.masthead,.footer,.toast,.demo-note,.noprint,.btn,.hero,.steps{display:none!important}.frame{width:100%}.panel{border:0;break-inside:avoid}.layout{display:block}}
+.brand img{flex:none;object-fit:contain;background:#f9d67c;border-radius:13px;padding:3px}
+.home-hero{position:relative;display:grid;grid-template-columns:minmax(0,1fr) minmax(150px,36%);align-items:center;background:#19213f;min-height:325px}
+.home-hero h1{font-size:clamp(2.15rem,5vw,4.1rem);max-width:12ch;margin:0 0 24px}
+.home-hero .lime,.topic[aria-pressed=true]{background:#f9d67c;color:#19213f}
+.torah-art{width:100%;height:auto;max-height:290px;object-fit:contain}
+.home-date{margin:16px 0}
+.course-heading{padding:24px 0 30px}
+.course-heading h1{font-size:clamp(3rem,9vw,6rem);line-height:1;margin:6px 0 14px;color:#19213f;overflow-wrap:anywhere}
+.course-heading p{margin:4px 0}
+.topic{flex-direction:column;align-items:flex-start;gap:5px;text-align:left}
+.topic small{font-size:.9rem;font-weight:500}
+.vote-results{margin-top:20px}
+.question-carousel{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(240px,68%);gap:12px;overflow:auto;scroll-snap-type:x proximity;padding-bottom:10px}
+.question-carousel .thread{scroll-snap-align:start;min-width:0;overflow-wrap:anywhere}
+[data-question-list] .thread[hidden],[data-empty-search][hidden]{display:none}
+audio{max-width:100%;width:100%}
+@media(max-width:560px){.home-hero{display:block;min-height:0}.home-hero h1{font-size:clamp(1.9rem,7vw,2.6rem);max-width:18ch;margin-bottom:17px}.torah-art{display:none}.brand strong{font-size:clamp(.86rem,4vw,1.15rem)}.brand img{width:37px;height:37px}}

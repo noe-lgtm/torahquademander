@@ -1,20 +1,20 @@
 import { action, advance, blank, view } from './core.js';
 
-const key = 'moadon-demo-v1';
+const key = 'moadon-demo-hanouka-v1';
 const actor = 'demo-visiteur';
 function start() {
   const now = Date.now();
   const state = blank();
   action(state, {kind:'create',data:{
-    title:'Le prochain cours de Torah',
+    title:'Hanouka', courseAt:now + 120 * 3600000,
     description:'Un cours de Torah qui part de tes questions.',
-    themes:['Chabbat','Prière','Éthique et relations','Cacherout'],
+    themes:['Hanouka aujourd’hui','Les Maccabées et leur combat','Les lumières à la fenêtre','La fiole et le miracle'],
     end:now + 36 * 3600000, questionsEnd:now + 96 * 3600000, runoff:8
   }}, 'demo-admin', true, now);
   const session = state.sessions[0].id;
   action(state,{kind:'saveQuiz',session,data:{questions:[
-    {text:'Que signifie le mot « kiddouch » ?',options:['Sanctification','Repos','Prière du matin'],correct:0},
-    {text:'À quel moment fait-on habituellement la havdala ?',options:['Au début de Chabbat','À la sortie de Chabbat','Le vendredi à midi'],correct:1}
+    {text:'Que signifie le mot « Hanouka » ?',options:['Inauguration','Lumière','Victoire'],correct:0},
+    {text:'Combien de soirs dure Hanouka ?',options:['Sept','Huit','Neuf'],correct:1}
   ]}},'demo-admin',true,now);
   return { state, admin:false, offset:0 };
 }

@@ -5,8 +5,8 @@ const toast = document.querySelector('#toast');
 const demo = location.protocol === 'file:' || new URLSearchParams(location.search).has('demo') || !!globalThis.MOADON_DEMO;
 document.querySelector('#demo-note').hidden = !demo;
 let store;
-let selected = '';
-let selectedRound = '';
+let questionSearch = '';
+let questionSort = 'recent';
 let panel = 'gestion';
 let staffSession = '';
 let reviewGrade;
@@ -43,10 +43,10 @@ const btn = (label, kind, klass = '', attrs = '') => `<button type="button" clas
 const link = (label, href, klass = '') => `<a class="btn ${klass}" href="#${href}">${label}</a>`;
 const section = (title, description) => `<div class="section-head"><h1 class="page-title">${title}</h1>${description ? `<p>${description}</p>` : ''}</div>`;
 const panelWrap = (body, klass = '') => `<section class="panel ${klass}">${body}</section>`;
-const field = (label, name, props = '') => `<label>${label}<input name="${name}" ${props}></label>`;
+const field = (label, name, props = '', value) => `<label>${label}<input name="${name}" ${props}${value == null ? '' : ` value="${h(value)}"`}></label>`;
 const area = (label, name, contents='', props='') => `<label>${label}<textarea name="${name}" ${props}>${h(contents)}</textarea></label>`;
 const submit = (text,klass='') => `<button class="btn ${klass}" type="submit">${text}</button>`;
-const orbit = Array.from({length:7},(_,i) => `<span class="orbit" style="--inset:${i*22}px;--point:${9+i*8}%;--offset:${76-i*11}%"></span>`).join('');
+
 
 function notify(string, isError = false) {
   toast.classList.toggle('error', isError);
@@ -121,33 +121,55 @@ function tick() {
   }
 }
 let lastFetch = Date.now();
+const hanoukaHooks = new Map([
+  ['Hanouka aujourd’hui','Que fête-t-on encore quand le contexte a changé ?'],
+  ['Les Maccabées et leur combat','Contre quoi les Maccabées se sont-ils vraiment révoltés ?'],
+  ['Les lumières à la fenêtre','Pourquoi allumer à un endroit où les autres peuvent voir ?'],
+  ['La fiole et le miracle','Pourquoi célèbre-t-on huit jours si l’huile suffisait déjà pour le premier ?']
+]);
 function votePanel(s) {
   const v = s.vote;
-  if (selectedRound !== s.id + ':' + v.round) {
-    selectedRound = s.id + ':' + v.round;
-    selected = '';
+  const results = v.totals ? `<div class="vote-results"><h3>Résultats du vote</h3>${Object.entries(v.totals).map(([name,count])=>`<div class="rank-row"><span>${h(name)}</span><strong>${count} vote${count===1?'':'s'}</strong></div>`).join('')}</div>` : '';
+  if (v.state !== 'open') return panelWrap(`<h2>${v.winner ? 'Sous-thème retenu · '+h(v.winner) : 'L’équipe départage les sous-thèmes'}</h2>${results}`);
+  return panelWrap(`<div class="panel-head"><h2>Vote pour un sous-thème</h2><span class="tag">${v.round === 2 ? 'Second tour' : 'Vote ouvert'}</span></div>
+    ${timing(v.end)}<div class="choices" aria-label="Sous-thèmes proposés">${v.eligible.map((t,i) => {
+      const hook = s.hooks?.[t] || hanoukaHooks.get(t);
+      return `<button type="button" class="choice topic" data-do="vote" data-index="${i}" aria-pressed="${t === v.voted}"><strong>${h(t)}</strong>${hook ? `<small>${h(hook)}</small>` : ''}</button>`;
+    }).join('')}</div>
+    ${v.voted ? `<p class="notice" role="status">Ton vote · <strong>${h(v.voted)}</strong>. Tu peux le modifier jusqu’à la clôture.</p>` : ''}${results}`);
+}
+const searchable = text => text.toLocaleLowerCase('fr').normalize('NFD').replace(/\p{M}/gu,'');
+function filterThreads() {
+  const list = main.querySelector('[data-question-list]');
+  if (!list) return;
+  const search = searchable(questionSearch.trim());
+  const rows = [...list.querySelectorAll('.thread')];
+  const compare = (a,b) => questionSort === 'support' ? b.dataset.support-a.dataset.support || b.dataset.at-a.dataset.at : b.dataset.at-a.dataset.at;
+  for (const row of rows.sort(compare)) {
+    row.hidden = !searchable(row.dataset.search).includes(search);
+    list.append(row);
   }
-  if (v.state === 'decision') return panelWrap('<h2>Le thème sera annoncé ici</h2><p class="muted">L’équipe va départager les thèmes arrivés en tête.</p>');
-  if (v.state !== 'open') return '';
-  return panelWrap(`<div class="panel-head"><div><h2>Choisis le thème du cours</h2><p class="muted">Sélectionne le sujet que tu aimerais aborder.</p></div><span class="tag">${v.round === 2 ? 'Second tour' : 'Vote ouvert'}</span></div>
-    ${timing(v.end)}<div class="choices" aria-label="Thèmes proposés">${v.eligible.map((t,i) => `<button type="button" class="choice" data-do="select" data-index="${i}" aria-pressed="${t === (v.voted || selected)}" ${v.voted?'disabled':''}><span>${String.fromCharCode(65+i)}</span>${h(t)}</button>`).join('')}</div>
-    ${v.voted ? `<div class="notice" role="status">Ton vote pour <strong>${h(v.voted)}</strong> a été enregistré.</div>` : btn('Valider mon vote','vote','lime',selected ? '' : 'disabled')}`);
+  list.querySelector('[data-empty-search]').hidden = rows.some(row=>!row.hidden);
 }
 function threadsPanel(s, isAdmin = false) {
-  if (!s.vote.winner) return '';
   const threads = s.threads.filter(t => isAdmin || !t.hidden).slice().sort((a,b) => b.support - a.support || b.at - a.at);
   const canPost = s.threadsOpen;
-  return panelWrap(`<div class="panel-head"><div><h2>Questions sur ${h(s.vote.winner)}</h2><p class="muted">${canPost?'Pose ta question ou soutiens celles que tu aimerais voir abordées.':'Les contributions sont fermées. Tu peux consulter les échanges.'}</p></div><span class="tag ${canPost?'green':''}">${canPost?'Ouvert':'Fermé'}</span></div>
-    ${canPost && !s.after.threads ? timing(s.questionsEnd) : ''}
-    ${canPost ? `<form data-form="question" data-session="${s.id}">${area('Ta question','text','','required maxlength="1800"')}${field('Prénom ou pseudo (facultatif)','name','maxlength="50"')}${submit('Publier ma question','lime')}</form>`:''}
-    ${threads.length ? threads.map(t => `<article class="thread">
-      <span class="meta">${h(t.name || 'Anonyme')} · ${date(t.at)}${t.hidden?' · Masquée':''}</span><p>${h(t.text)}</p>
+  const article = (t,short=false) => `<article class="thread" data-support="${t.support}" data-at="${t.at}" data-search="${h(t.text+' '+(t.name || 'Anonyme'))}">
+      <span class="meta">${h(t.name || 'Anonyme')}${short?'':' · '+date(t.at)}${t.hidden?' · Masquée':''}</span><p>${h(t.text)}</p>
       <div class="inline">${canPost ? btn(`♥ ${t.support} · ${t.supported?'Retirer mon soutien':'Je me pose aussi la question'}`,'support',t.supported?'light small':'outline small',`data-session="${s.id}" data-id="${t.id}" aria-pressed="${t.supported}"`) : `<span class="meta">${t.support} soutien${t.support===1?'':'s'}</span>`}
       ${isAdmin ? btn(t.hidden?'Rétablir':'Masquer','moderate','danger small',`data-session="${s.id}" data-id="${t.id}"`) : ''}</div>
-      ${t.comments.length || canPost ? `<details data-key="${t.id}"><summary>${t.comments.length ? `${t.comments.length} commentaire${t.comments.length===1?'':'s'}`:'Commenter'}</summary>
-        ${t.comments.filter(c=>isAdmin||!c.hidden).map(c => `<div class="comment"><span class="meta">${c.official?'Équipe Moadon':h(c.name || 'Anonyme')}${c.hidden?' · Masqué':''}</span><p>${h(c.text)}</p>${isAdmin ? btn(c.hidden?'Rétablir':'Masquer','moderate','danger small',`data-session="${s.id}" data-id="${t.id}" data-comment="${c.id}"`) : ''}</div>`).join('')}
-        ${canPost ? `<form data-form="comment" data-session="${s.id}" data-id="${t.id}">${field('Ton commentaire','text','required maxlength="1000"')}${field('Prénom ou pseudo (facultatif)','name','maxlength="50"')}${submit('Envoyer','light')}</form>` : ''}</details>` : ''}
-    </article>`).join('') : '<p class="muted empty">Les questions s’afficheront ici.</p>'}`);
+      ${!short && (t.comments.length || isAdmin && canPost) ? `<details data-key="${t.id}"><summary>Réponses et commentaires</summary>
+        ${t.comments.map(c => `<div class="comment"><span class="meta">${c.official?'Équipe Moadon':h(c.name || 'Anonyme')}${c.hidden?' · Masqué':''}</span><p>${h(c.text)}</p>${isAdmin ? btn(c.hidden?'Rétablir':'Masquer','moderate','danger small',`data-session="${s.id}" data-id="${t.id}" data-comment="${c.id}"`) : ''}</div>`).join('')}
+        ${isAdmin && canPost ? `<form data-form="comment" data-session="${s.id}" data-id="${t.id}">${field('Réponse de l’équipe','text','required maxlength="1000"')}${submit('Publier la réponse','light')}</form>` : ''}</details>` : ''}
+    </article>`;
+  const top = threads.filter(t=>t.support>0).slice(0,5);
+  return panelWrap(`<div class="panel-head"><h2>Questions sur ${h(s.title)}</h2><span class="tag ${canPost?'green':''}">${canPost?'Ouvert':'Fermé'}</span></div>
+    ${canPost && !s.after.threads ? timing(s.questionsEnd) : ''}
+    ${canPost ? `<form data-form="question" data-session="${s.id}">${area('Ta question','text','','required maxlength="1800"')}${field('Prénom ou pseudo (facultatif)','name','maxlength="50"')}${submit('Publier ma question','lime')}</form>`:''}
+    ${!isAdmin && top.length ? `<h3>Les plus soutenues</h3><div class="question-carousel" aria-label="Questions les plus soutenues" tabindex="0">${top.map(t=>article(t,true)).join('')}</div>` : ''}
+    <h3>Toutes les questions</h3>
+    ${!isAdmin && threads.length ? `<div class="form-grid"><label>Rechercher <input id="questionSearch" type="search" value="${h(questionSearch)}"></label><label>Trier <select id="questionSort"><option value="recent">Plus récentes</option><option value="support" ${questionSort==='support'?'selected':''}>Plus soutenues</option></select></label></div>` : ''}
+    ${isAdmin ? threads.map(t=>article(t)).join('') : `<div data-question-list>${threads.map(t=>article(t)).join('')}<p class="muted" data-empty-search>${threads.length?'Aucune question ne correspond à la recherche.':'Les questions s’afficheront ici.'}</p></div>`}`);
 }
 function chatPanel(s, isAdmin = false) {
   if (!s.after.chat && !s.after.messages.length && !isAdmin) return '';
@@ -158,15 +180,20 @@ function chatPanel(s, isAdmin = false) {
 }
 function archiveLinks() {
   const archived = store.sessions.filter(s => s.archived);
-  return archived.length ? panelWrap(`<h2>Anciens cours</h2>${archived.map(s=>`<div class="rank-row"><a href="#archive/${s.id}">${h(s.vote.winner || s.title)}</a>${s.resources.published?'<span class="tag green">Ressources</span>':''}</div>`).join('')}`) : '';
+  return archived.length ? panelWrap(`<h2>Anciens cours</h2>${archived.map(s=>`<div class="rank-row"><a href="#archive/${s.id}">${h(s.vote.winner || s.title)}</a>${s.resources.published?link('Fiche et ressources','ressources/'+s.id,'outline small'):''}</div>`).join('')}`) : '';
+}
+function home() {
+  const s = active();
+  const latest = store.sessions.find(session=>session.archived);
+  return `<section class="hero home-hero"><div class="hero-copy"><h1>C’est vous qui choisissez le cours !</h1>
+    ${s ? link('Découvrir les sujets','cours','lime') : latest?.resources.published ? link('Voir la dernière fiche','ressources/'+latest.id,'lime') : ''}
+    </div><img class="torah-art" src="./torah.svg" alt=""></section>
+    ${s?.courseAt ? `<p class="home-date">Prochain cours · <strong>${date(s.courseAt)}</strong></p>` : ''}
+    ${!s && latest ? panelWrap(`<h2>Dernier cours · ${h(latest.title)}</h2>${link('Revoir le cours','archive/'+latest.id,'outline')}`) : ''}`;
 }
 function course() {
   const s = active();
-  const index = s?.quiz.stage === 'draft' ? s?.vote.winner ? 1 : 0 : s ? 2 : 0;
-  const stages = ['Vote pour le thème','Pose tes questions','Joue au quiz'];
-  return `<section class="hero"><div class="hero-copy"><span class="kicker">Cours de Torah participatif</span><h1>Le prochain cours,<br>c’est toi qui le choisis.</h1><p>${h(s?.description || 'Vote pour le thème, pose tes questions et rejoins le quiz du cours.')}</p></div>
-    <div class="hero-art" aria-hidden="true">${orbit}<span class="art-book"></span></div></section>
-    <ol class="steps" aria-label="Étapes du cours">${stages.map((x,i)=>`<li class="${i===index?'active':i<index?'done':''}" ${i===index?'aria-current="step"':''}><span class="step-mark">${i<index?'✓':i+1}</span>${x}</li>`).join('')}</ol>
+  return `${s ? `<section class="course-heading"><p>Prochain thème</p><h1>${h(s.title)}</h1><p>${s.courseAt ? date(s.courseAt) : 'Date et heure à venir'}</p>${s.description?`<p>${h(s.description)}</p>`:''}</section>` : ''}
     <div class="layout"><div class="stack">
     ${s ? votePanel(s)+threadsPanel(s)+chatPanel(s) : panelWrap('<h2>Le prochain vote est à venir</h2><p class="muted">Les thèmes proposés par l’équipe apparaîtront ici à l’ouverture du vote.</p>')}
     ${archiveLinks()}
@@ -179,26 +206,26 @@ function course() {
     </aside></div>`;
 }
 function ideas() {
-  return section('Boîte à idées','Envoie une idée de thème ou un retour sur le cours à l’équipe Moadon.') +
-    panelWrap(`<form data-form="idea">${area('Ton idée ou ton retour','text','','required maxlength="1500"')}${field('Prénom ou pseudo (facultatif)','name','maxlength="50"')}${submit('Envoyer à l’équipe','lime')}</form>`);
+  return section('Boîte à idées','Propose un thème, un format ou un intervenant à l’équipe Moadon.') +
+    panelWrap(`<form data-form="idea">${area('Ta proposition','text','','required maxlength="1500"')}${field('Prénom ou pseudo (facultatif)','name','maxlength="50"')}${submit('Envoyer à l’équipe','lime')}</form>`);
 }
 function personal() {
   const history = store.sessions.map(s => {
     const items = [
+      ...s.threads.filter(t=>t.own).map(t=>'Question · '+t.text),
       ...s.vote.history.map((theme,i)=>theme ? `Vote (tour ${i+1}) · ${theme}` : ''),
-      s.quiz.score != null ? `Quiz en salle · ${s.quiz.score} / ${s.quiz.count}` : '',
-      s.resources.score ? `Quiz de révision · ${s.resources.score.score} / ${s.resources.score.total}` : '',
-      ...s.threads.flatMap(t => [t.own ? 'Question · ' + t.text : '', ...t.comments.filter(c=>c.own).map(c=>'Commentaire · ' + c.text)])
+      s.quiz.score != null ? `Quiz en salle · ${s.quiz.score} / ${s.quiz.scoredCount}` : '',
+      s.resources.score ? `Quiz de révision · ${s.resources.score.score} / ${s.resources.score.total}` : ''
     ].filter(Boolean);
     return items.length ? panelWrap(`<h2>${h(s.vote.winner || s.title)}</h2><ul>${items.map(i=>`<li>${h(i)}</li>`).join('')}</ul>`) : '';
   }).filter(Boolean);
   const ownIdeas = store.ideas.filter(i=>i.own).map(i=>`<li>${h(i.text)}</li>`).join('');
   return section('Mon espace','Retrouve ici tes contributions et tes scores sur ce navigateur.') +
     '<div class="stack">' + (history.join('') || (!ownIdeas ? panelWrap('<p class="muted">Tes contributions et tes scores apparaîtront ici après ta participation.</p>') : '')) +
-    (ownIdeas ? panelWrap(`<h2>Mes idées envoyées</h2><ul>${ownIdeas}</ul>`) : '') + '</div>';
+    archiveLinks() + (ownIdeas ? panelWrap(`<h2>Mes idées envoyées</h2><ul>${ownIdeas}</ul>`) : '') + '</div>';
 }
 function ranking(q) {
-  return `<h3>Classement</h3>${q.ranking.length ? q.ranking.map((e,i)=>`<div class="rank-row"><span>${i+1}. ${h(e.name)}</span><strong>${e.score} / ${q.count}</strong></div>`).join(''):'<p class="muted">Aucun participant.</p>'}`;
+  return `<h3>Classement</h3>${q.ranking.length ? q.ranking.map((e,i)=>`<div class="rank-row"><span>${i+1}. ${h(e.name)}</span><strong>${e.score} / ${q.scoredCount}</strong></div>`).join(''):'<p class="muted">Aucun participant.</p>'}`;
 }
 function distributions(q) {
   return q.results.map((item,i)=>`<div class="thread"><h3>${i+1}. ${h(item.text)}</h3>${item.options.map((o,j)=>`<div class="bar-label"><span class="${j===item.correct?'result-line':''}">${j===item.correct?'✓ ':''}${h(o)}</span><strong>${item.totals[j]}</strong></div><progress value="${item.totals[j]}" max="${Math.max(1,q.participants)}" aria-label="${h(o)}"></progress>`).join('')}</div>`).join('');
@@ -209,11 +236,12 @@ function quiz(s, projector = false) {
   let body;
   if (q.stage === 'draft') body = panelWrap('<h2>En attente de l’animateur</h2><p class="muted">Le quiz s’ouvrira ici à la fin du cours.</p>');
   else if (q.stage === 'results') body = `<div class="layout"><div class="stack">${panelWrap(`<h2>Les réponses de la salle</h2>${!projector && q.score!=null?`<p class="score-card">Ton score · ${q.score} / ${q.count}</p>`:''}${distributions(q)}`)}</div>${panelWrap(ranking(q))}</div>`;
-  else if (!q.joined && !projector) body = panelWrap(`<h2>Rejoins le quiz</h2><p class="muted">Le pseudo sera affiché dans le classement final.</p><form data-form="join" data-session="${s.id}">${field('Ton pseudo','name','required maxlength="30" autocomplete="off"')}${submit('Entrer dans le quiz','lime')}</form>`);
+  else if (!q.joined && !projector) body = panelWrap(`<h2>Rejoins le quiz</h2><p class="muted">Le pseudo sera affiché dans le classement.</p><form data-form="join" data-session="${s.id}">${field('Ton pseudo','name','required maxlength="30" autocomplete="off"')}${submit('Entrer dans le quiz','lime')}</form>`);
   else if (q.stage === 'lobby') body = panelWrap(`<h2>En attente du départ</h2><p>${q.participants} participant${q.participants===1?'':'s'}</p>${!projector?`<p class="muted">Tu joues sous le pseudo ${h(q.joined)}.</p>`:''}`);
   else body = panelWrap(`<span class="tag">Question ${q.index+1} sur ${q.count}</span><h2>${h(q.question)}</h2>
     <div class="choices">${q.options.map((o,i)=>projector?`<div class="choice"><span>${String.fromCharCode(65+i)}</span>${h(o)}</div>` :
       `<button class="choice" type="button" data-do="answer" data-session="${s.id}" data-index="${i}" aria-pressed="${q.choice===i}" ${q.choice!=null||q.stage==='locked'?'disabled':''}><span>${String.fromCharCode(65+i)}</span>${h(o)}</button>`).join('')}</div>
+    ${q.stage==='locked'? `<div>${!projector && q.score!=null?`<p class="score-card">Ton score · ${q.score} / ${q.scoredCount}</p>`:''}${ranking(q)}</div>`:''}
     <div class="notice">${projector ? `${q.responses} réponse${q.responses===1?'':'s'} reçue${q.responses===1?'':'s'}` : q.choice!=null?'Ta réponse a été enregistrée.':q.stage==='locked'?'Les réponses à cette question sont closes.':'Choisis une réponse.'}</div>`);
   return `<div class="${projector?'projector':''}">${section('Quiz en salle',h(s.vote.winner||s.title))}${body}</div>`;
 }
@@ -223,6 +251,8 @@ function resources(s) {
   const grade = reviewGrade?.session === s.id ? reviewGrade : null;
   return section('Après le cours',h(s.vote.winner||s.title)) + `<div class="stack">
     ${r.summary ? panelWrap(`<div class="panel-head"><h2>Fiche récapitulative</h2>${btn('Imprimer','print','outline small noprint')}</div><div class="recap">${h(r.summary)}</div>`):''}
+    ${r.audioUrl ? panelWrap(`<h2>Extrait audio</h2><audio controls preload="none" src="${h(r.audioUrl)}"></audio>`,'noprint') : ''}
+    ${r.answers ? panelWrap(`<h2>Réponses aux questions restées ouvertes</h2><div class="recap">${h(r.answers)}</div>`) : ''}
     ${r.review.length ? panelWrap(`<h2>Quiz de révision</h2>
       ${grade ? `<p class="score-card" role="status">Ton score · ${grade.score} / ${grade.total}</p>`:r.score?`<p class="muted">Dernier score · ${r.score.score} / ${r.score.total}</p>`:''}
       <form data-form="review" data-session="${s.id}">${r.review.map((q,i)=>`<fieldset><legend>${i+1}. ${h(q.text)}</legend>${q.options.map((o,j)=>`<label class="${grade?.correct[i]===j?'result-line':''}"><input type="radio" name="review-${i}" value="${j}" required ${grade?.answers[i]===j?'checked':''}> ${h(o)}${grade?.correct[i]===j?' ✓':''}</label>`).join('')}</fieldset>`).join('')}${submit(grade?'Vérifier à nouveau':'Vérifier mes réponses','lime')}</form>`,'noprint'):''}
@@ -253,9 +283,11 @@ function management(s) {
   let body = '';
   if (!active()) {
     body += panelWrap(`<h2>Ouvrir un nouveau vote</h2><form data-form="setup">
-      ${field('Titre de la séance','title','required maxlength="100" placeholder="Le prochain cours de Torah"')}
+      ${btn('Préremplir Hanouka','hanoukaPreset','outline small')}
+      ${field('Thème principal','title','required maxlength="100" placeholder="Hanouka"')}
       ${area('Présentation (facultative)','description','','maxlength="450"')}
-      ${area('Thèmes proposés, un par ligne','themes','','required placeholder="Chabbat\nPrière\nCacherout"')}
+      ${area('Sous-thèmes, un par ligne (titre | question d’accroche)','themes','','required placeholder="La fiole et le miracle | Pourquoi huit jours ?"')}
+      ${field('Date et heure du cours · heure de Paris','courseAt','type="datetime-local"')}
       <div class="form-grid">${field('Clôture du vote · heure de Paris','end',`type="datetime-local" required value="${parisInput(store.now+86400000)}"`)}
       ${field('Durée du second tour (heures)','runoff','type="number" min="0.25" max="168" step="0.25" required value="8"')}
       ${field('Clôture des questions · heure de Paris','questionsEnd',`type="datetime-local" required value="${parisInput(store.now+3*86400000)}"`)}</div>
@@ -269,13 +301,12 @@ function management(s) {
     ${v.state==='decision' && !s.archived ? `<h3>Départager les thèmes</h3><div class="inline">${v.eligible.map((t,i)=>btn(h(t),'pick','outline',`data-index="${i}" data-session="${s.id}"`)).join('')}</div>` : ''}
     ${v.state === 'open' && demo ? btn('Simuler la clôture du vote','demoClose','light small') : ''}
     ${!s.archived && v.state === 'done' && !quizActive ? '<p>'+btn('Archiver ce cours','archive','outline small',`data-session="${s.id}"`)+'</p>' : ''}`);
-  if (v.winner) {
-    body += panelWrap(`<h2>Gérer les échanges</h2>
+  if (!s.archived) body += panelWrap(`<form data-form="courseDate" data-session="${s.id}">${field('Date et heure du cours · heure de Paris','courseAt',`type="datetime-local" required value="${s.courseAt ? parisInput(s.courseAt) : ''}"`)}${submit('Enregistrer la date','outline small')}</form>`);
+  body += panelWrap(`<h2>Gérer les échanges</h2>
       ${!s.archived?`<form data-form="deadline" data-session="${s.id}">${field('Clôture des contributions · heure de Paris','end',`type="datetime-local" required value="${parisInput(s.questionsEnd)}"`)}${submit('Modifier la clôture','outline small')}</form>`:''}
-      <form data-form="after" data-session="${s.id}"><label><input type="checkbox" name="threads" ${s.after.threads?'checked':''}> Rouvrir les fils de questions</label>
-      <label><input type="checkbox" name="chat" ${s.after.chat?'checked':''}> Ouvrir le chat avec l’intervenant</label>${submit('Enregistrer les réglages','light')}</form>`);
-    body += threadsPanel(s,true) + chatPanel(s,true);
-  }
+      ${v.winner ? `<form data-form="after" data-session="${s.id}"><label><input type="checkbox" name="threads" ${s.after.threads?'checked':''}> Rouvrir les fils de questions</label>
+      <label><input type="checkbox" name="chat" ${s.after.chat?'checked':''}> Ouvrir le chat avec l’intervenant</label>${submit('Enregistrer les réglages','light')}</form>` : ''}`);
+  body += threadsPanel(s,true) + chatPanel(s,true);
   return body;
 }
 function quizAdmin(s) {
@@ -311,6 +342,8 @@ function audioPanel(s) {
     ${[...recordings].reverse().map(([key,parts])=>`<div class="rank-row"><span>Enregistrement · ${parts.length} segment${parts.length===1?'':'s'} · ${parts.filter(a=>a.transcript!=null).length} transcrit(s)</span>${btn('Générer un brouillon','generate','light small',`data-session="${s.id}" data-id="${key}"`)}</div>`).join('')}
     <div id="localAudio"></div>`) + panelWrap(`<div class="panel-head"><h2>Fiche et quiz de révision</h2><span class="tag ${s.resources.published?'green':''}">${s.resources.published?'Publié':'Brouillon'}</span></div>
     <form data-form="resources" data-session="${s.id}">${area('Fiche récapitulative','summary',data.summary,'maxlength="30000" rows="9"')}
+    ${field('Lien HTTPS de l’extrait audio','audioUrl','type="url" maxlength="2000"',data.audioUrl ?? s.resources.audioUrl)}
+    ${area('Réponses aux questions restées ouvertes','answers',data.answers ?? s.resources.answers,'maxlength="20000"')}
     <details><summary>Transcription (interne)</summary>${area('Texte à relire','transcript',data.transcript,'maxlength="160000" rows="6"')}</details>
     <h3>Quiz de révision</h3>${questionEditor(data.review||[])}
     <label><input type="checkbox" name="published" ${s.resources.published && !generatedDraft?'checked':''}> Publier la fiche et le quiz sur le site</label>
@@ -331,7 +364,7 @@ function adminPage() {
 }
 function render() {
   const [page] = path();
-  const current = page || 'cours';
+  const current = page || 'accueil';
   const s = pageSession();
   const details = [...main.querySelectorAll('details[data-key][open]')].map(x=>x.dataset.key);
   for (const nav of document.querySelectorAll('[data-link]')) {
@@ -353,16 +386,20 @@ function render() {
       main.innerHTML = s ? section(h(s.vote.winner||s.title),'Cours passé') + `<div class="stack">${threadsPanel(s)}${chatPanel(s)}${s.quiz.stage==='results'?link('Résultats du quiz','quiz/'+s.id,'outline'):''}${s.resources.published?link('Fiche et quiz de révision','ressources/'+s.id,'light'):''}</div>` : course();
       break;
     case 'admin': main.innerHTML = adminPage(); break;
-    default: main.innerHTML = course();
+    case 'cours': main.innerHTML = course(); break;
+    default: main.innerHTML = home();
   }
+  filterThreads();
   for (const item of main.querySelectorAll('details[data-key]')) item.open = details.includes(item.dataset.key);
   if (demo && current === 'admin' && panel === 'audio') attachLocalAudio();
 }
 main.addEventListener('input',event=>{
+  if (event.target.id === 'questionSearch') { questionSearch = event.target.value; filterThreads(); }
   const form = event.target.closest('form');
   if (form) form.dataset.dirty = 'true';
 });
 main.addEventListener('change',event=>{
+  if (event.target.id === 'questionSort') { questionSort = event.target.value; filterThreads(); }
   if (event.target.id === 'staffSession') {
     if (main.querySelector('form[data-dirty]') && !confirm('Changer de séance sans enregistrer les modifications ?')) {
       event.target.value = managed()?.id || '';
@@ -382,11 +419,13 @@ main.addEventListener('submit',async event=>{
   const messages = { question:'Ta question a été publiée.',comment:'Commentaire publié.',chat:'Message envoyé.',idea:'Ton idée a été envoyée à l’équipe.',after:'Réglages enregistrés.' };
   try {
     if (kind === 'create' || kind === 'setup') {
-      if (await change('create',{...fields,end:fromParis(fields.end),questionsEnd:fromParis(fields.questionsEnd),themes:fields.themes.split(/\n/)},undefined,'Le vote est ouvert.')) {
+      const topics = fields.themes.split(/\n/).map(line=>line.split('|').map(part=>part.trim()));
+      if (await change('create',{...fields,courseAt:fields.courseAt ? fromParis(fields.courseAt) : null,end:fromParis(fields.end),questionsEnd:fromParis(fields.questionsEnd),themes:topics.map(([title])=>title),hooks:Object.fromEntries(topics)},undefined,'Le vote est ouvert.')) {
         staffSession = active()?.id || '';
         render();
       }
-    } else if (kind === 'deadline') await change(kind,{end:fromParis(fields.end)},session,'Clôture mise à jour.');
+    } else if (kind === 'courseDate') await change(kind,{courseAt:fromParis(fields.courseAt)},session,'Date du cours enregistrée.');
+    else if (kind === 'deadline') await change(kind,{end:fromParis(fields.end)},session,'Clôture mise à jour.');
     else if (kind === 'after') await change(kind,{threads:!!fields.threads,chat:!!fields.chat},session,messages.after);
     else if (kind === 'quizEditor') await change('saveQuiz',{questions:editQuestions(form)},session,'Quiz enregistré.');
     else if (kind === 'resources') {
@@ -403,11 +442,14 @@ main.addEventListener('click',async event=>{
   if (!target || target.disabled) return;
   const { do:kind,index,id,session,comment } = target.dataset;
   const s = pageSession();
-  if (kind === 'select') {
-    selected = s.vote.eligible[Number(index)];
-    for (const choice of main.querySelectorAll('[data-do=select]')) choice.setAttribute('aria-pressed',String(choice === target));
-    main.querySelector('[data-do=vote]').disabled = false;
-  } else if (kind === 'vote') await change('vote',{theme:selected,round:s.vote.round},s.id,'Vote enregistré.');
+  if (kind === 'vote') await change('vote',{theme:s.vote.eligible[Number(index)],round:s.vote.round},s.id,'Vote enregistré.');
+  else if (kind === 'hanoukaPreset') {
+    const form = target.closest('form');
+    form.elements.title.value = 'Hanouka';
+    form.elements.themes.value = [...hanoukaHooks].map(([name,hook])=>name+' | '+hook).join('\n');
+    form.dataset.dirty = 'true';
+    form.elements.courseAt.focus();
+  }
   else if (kind === 'pick') await change(kind,{theme:managed().vote.eligible[Number(index)]},session,'Thème annoncé.');
   else if (kind === 'answer') await change(kind,{choice:Number(index),index:s.quiz.index},session);
   else if (kind === 'tab') {

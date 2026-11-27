@@ -40,7 +40,7 @@ export function advance(db, now = Date.now()) {
   return true;
 }
 
-const threadsOpen = (s, now) => s.after.threads || (!s.archived && now < s.questionsEnd);
+const threadsOpen = (s, now) => Boolean(s.vote.winner && (s.after.threads || (!s.archived && now < s.questionsEnd)));
 
 export function action(db, input, actor, isAdmin, now = Date.now()) {
   const { kind, data = {} } = input;
@@ -54,9 +54,11 @@ export function action(db, input, actor, isAdmin, now = Date.now()) {
     need(isAdmin, 'Connecte-toi au back-office.');
     need(!db.sessions.some(x => !x.archived), 'Archive le cours en cours avant d’en créer un autre.');
     const end = Number(data.end);
+    const start = data.start == null ? null : Number(data.start);
     const questionsEnd = Number(data.questionsEnd);
     const hours = Number(data.runoff);
     need(end > now && end < now + 366 * 86400000, 'Choisis une date de clôture du vote à venir.');
+    need(start == null || start > now && start < end, 'L’ouverture du vote doit précéder sa clôture.');
     need(hours >= 0.25 && hours <= 168, 'Le second tour doit durer entre 15 minutes et 7 jours.');
     need(questionsEnd > end + hours * 3600000 && questionsEnd < now + 366 * 86400000, 'Prévois une clôture des questions après la fin possible du second tour.');
     const themes = Array.isArray(data.themes) ? data.themes.map(t => value(t, 80)).filter(Boolean) : [];
@@ -66,7 +68,7 @@ export function action(db, input, actor, isAdmin, now = Date.now()) {
     const title = required(data.title, 100, 'Donne un titre au cours.');
     db.sessions.unshift({
       id: id(), title, courseAt, hooks: Object.fromEntries(themes.map(t => [t, value(data.hooks?.[t], 220)])), description: value(data.description, 450), questionsEnd, themes,
-      vote: { state: 'open', end, eligible: themes, round: 1, runoffMs: hours * 3600000, ballots: {} },
+      vote: { state: 'open', start, end, eligible: themes, round: 1, runoffMs: hours * 3600000, ballots: {} },
       threads: [], after: { threads: false, chat: false, messages: [] },
       quiz: { questions: [], stage: 'draft', index: -1, entries: {} },
       resources: { summary: '', review: [], published: false, transcript: '' }, audio: []
@@ -89,6 +91,7 @@ export function action(db, input, actor, isAdmin, now = Date.now()) {
 
   switch (kind) {
     case 'vote':
+      need(!vote.start || now >= vote.start, 'Le vote n’est pas encore ouvert.');
       need(!s.archived && vote.state === 'open' && vote.round === data.round && now < vote.end, 'Ce tour est terminé.');
       need(vote.eligible.includes(data.theme), 'Thème indisponible.');
       vote.ballots[actor] = data.theme;
@@ -255,7 +258,7 @@ export function view(db, actor, admin, now = Date.now()) {
         id: s.id, title: s.title, description: s.description, courseAt: s.courseAt, live: !s.archived && s.live === true, image: s.image, hooks: s.hooks, archived: !!s.archived,
         questionsEnd: s.questionsEnd, threadsOpen: threadsOpen(s, now), threads,
         vote: {
-          state: v.state, end: v.end, eligible: v.eligible, round: v.round,
+          state: v.state === 'open' && v.start > now ? 'scheduled' : v.state, start: v.start, end: v.end, eligible: v.eligible, round: v.round,
           winner: v.winner, voted: v.ballots[actor],
           history: v.round === 2 ? [v.firstBallots?.[actor], v.ballots[actor]] : [v.ballots[actor]],
           totals: admin || v.state !== 'open' || v.ballots[actor] ? Object.fromEntries((v.round === 1 ? s.themes : s.themes.filter(t => v.eligible.includes(t) || Object.values(v.ballots).includes(t))).map(t => [t, Object.values(v.ballots).filter(x => x === t).length])) : null

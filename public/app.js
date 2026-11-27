@@ -13,6 +13,8 @@ let reviewGrade;
 let modalTimer;
 let contributionDialog;
 let contributionStep = 0;
+let contributionSteps = [];
+let homeOfferTimer;
 let contributionChoice = null;
 const seenContributions = new Set();
 let busy = false;
@@ -135,11 +137,11 @@ function voteResults(v) {
   return v.totals ? `<div class="vote-results"><h3>Résultats du vote</h3>${Object.entries(v.totals).map(([name,count])=>`<div class="rank-row"><span>${h(name)}</span><strong>${count} vote${count===1?'':'s'}</strong></div>`).join('')}</div>` : '';
 }
 function topicCards(s, clickable = true) {
-  return `<div class="choices" aria-label="Sous-thèmes proposés">${s.vote.eligible.map((theme,index) => {
+  return `<div class="choices" aria-label="Sous-thèmes proposés">${s.vote.eligible.map(theme => {
     const chosen = theme === s.vote.voted;
     const hook = s.hooks?.[theme] || hanoukaHooks.get(theme);
     const body = `<strong>${h(theme)}</strong>${hook ? `<small>${h(hook)}</small>` : ''}${chosen ? '<small class="chosen-label">✓ Ton choix</small>' : ''}`;
-    return clickable ? `<button type="button" class="choice topic" data-do="vote" data-index="${index}" aria-pressed="${chosen}">${body}</button>` : `<article class="choice topic topic-preview-only">${body}</article>`;
+    return clickable ? `<button type="button" class="choice topic" data-do="vote" data-theme="${h(theme)}" data-session="${s.id}" data-round="${s.vote.round}" aria-pressed="${chosen}">${body}</button>` : `<article class="choice topic topic-preview-only">${body}</article>`;
   }).join('')}</div>`;
 }
 function votePanel(s) {
@@ -226,15 +228,15 @@ function home() {
   const s = active();
   const latest = store.sessions.find(session=>session.archived);
   return `<section class="welcome">
-    <div>
+    <div class="welcome-copy">
       <h1>C’est vous qui choisissez le cours !</h1>
-      <p>Moadon propose plusieurs sujets. Votre vote décide du prochain cours.</p>
+      <p>À chaque séance, Moadon propose plusieurs sujets autour d’un même thème. Vos votes choisissent le sujet, et vos questions donnent sa direction au cours.</p>
       <div class="inline">
         ${s ? link('Découvrir les sujets','cours','lime') : latest?.resources.published ? link('Voir la dernière fiche','ressources/'+latest.id,'lime') : ''}
         ${btn('Participer','contribute','outline')}
       </div>
     </div>
-    ${s ? courseBanner(s,true) : ''}
+    ${s ? `<div class="welcome-course"><p class="welcome-course-label">Le prochain cours</p>${courseBanner(s,true)}</div>` : ''}
   </section>
   <section class="how-it-works" aria-labelledby="how-title">
     <h2 id="how-title">Comment ça marche ?</h2>
@@ -246,19 +248,38 @@ function home() {
   </section>
   ${!s && latest ? panelWrap(`<h2>Dernier cours · ${h(latest.title)}</h2>${link('Revoir le cours','archive/'+latest.id,'outline')}`) : ''}`;
 }
-function offerContributions(s) {
+function rememberContributions(s) {
   const key = 'torah-contribution-seen:' + s.id;
-  if (seenContributions.has(key)) return;
+  if (seenContributions.has(key)) return false;
   seenContributions.add(key);
   try {
-    if (localStorage.getItem(key)) return;
+    if (localStorage.getItem(key)) return false;
     localStorage.setItem(key,'1');
   } catch { /* The in-memory marker still works for this visit. */ }
-  openContributions();
+  return true;
 }
+function canContribute(kind, s = active()) {
+  if (kind === 'vote') return s?.vote.state === 'open';
+  if (kind === 'question') return s?.threadsOpen;
+  return true;
+}
+function offerContributions() {
+  const s = active();
+  if (!s || store.admin || busy || document.hidden || document.querySelector('dialog[open]')) return;
+  if (path()[0] && path()[0] !== 'accueil') return;
+  if (!(canContribute('vote',s) && !s.vote.voted) && !canContribute('question',s)) return;
+  if (rememberContributions(s)) openContributions();
+}
+window.addEventListener('scroll',()=>{
+  const intro = main.querySelector('.welcome');
+  if (intro && window.scrollY >= Math.min(170,intro.offsetHeight * .45)) offerContributions();
+},{passive:true});
 function openContributions() {
   if (contributionDialog?.open) return;
-  contributionStep = active() ? 0 : 2;
+  const s = active();
+  if (s) rememberContributions(s);
+  contributionSteps = ['vote','question','idea'].filter(kind=>canContribute(kind,s));
+  contributionStep = 0;
   contributionChoice = null;
   const dialog = document.createElement('dialog');
   const opener = main.querySelector('[data-do="contribute"]');
@@ -276,9 +297,8 @@ function openContributions() {
     const target = event.target.closest('button');
     if (!target || busy) return;
     if (target.dataset.do === 'vote') {
-      const s = active();
-      if (s?.vote.state !== 'open') { renderContribution(); return; }
-      contributionChoice = {session:s.id,theme:s.vote.eligible[Number(target.dataset.index)],round:s.vote.round};
+      const {session,theme,round} = target.dataset;
+      contributionChoice = {session,theme,round:Number(round)};
       renderContribution();
     } else if (target.dataset.contribution === 'cancel') {
       contributionChoice = null;
@@ -287,8 +307,7 @@ function openContributions() {
       const {session,theme,round} = contributionChoice;
       submitContribution(dialog,target,'vote',{theme,round},session);
     } else if (target.dataset.contribution === 'next') {
-      if (contributionStep === 2) dialog.close();
-      else { contributionStep++; contributionChoice = null; renderContribution(); }
+      advanceContribution();
     } else if (target.dataset.contribution === 'close') dialog.close();
   });
   dialog.addEventListener('submit',event=>{
@@ -303,39 +322,50 @@ function openContributions() {
   dialog.showModal();
   dialog.querySelector('h2').focus();
 }
+function advanceContribution(message) {
+  contributionChoice = null;
+  const next = contributionSteps.slice(contributionStep+1).filter(kind=>canContribute(kind));
+  contributionSteps.splice(contributionStep+1,contributionSteps.length,...next);
+  if (++contributionStep >= contributionSteps.length) contributionDialog.close();
+  else renderContribution(message);
+}
 function renderContribution(message = '') {
   const dialog = contributionDialog;
   const s = active();
-  let title = 'Quel sujet aimerais-tu étudier ?';
-  let body = '';
-  if (contributionStep === 0) {
+  const step = contributionSteps[contributionStep];
+  let title = 'Une idée pour un prochain cours ?';
+  let body = `<p>Propose un sujet, un format ou un intervenant à l’équipe Moadon.</p>${contributionForm('idea')}`;
+  if (step === 'vote') {
     if (contributionChoice) {
       title = 'Confirmer ton vote ?';
       body = `<p>Tu as choisi <strong>${h(contributionChoice.theme)}</strong>.</p><div class="inline">
         <button type="button" class="btn outline" data-contribution="cancel">Revenir</button>
         <button type="button" class="btn lime" data-contribution="confirm">Confirmer le vote</button></div>`;
-    } else if (s?.vote.state === 'open') {
+    } else if (canContribute('vote',s)) {
+      title = 'Quel sujet aimerais-tu étudier ?';
       body = `<p>${h(s.title)}</p>${topicCards(s)}${voteResults(s.vote)}`;
-    } else if (s?.vote.state === 'scheduled') {
-      body = `<p>Le vote ouvre le <strong>${date(s.vote.start)}</strong>.</p>${topicCards(s,false)}`;
     } else {
-      body = `<p>${s?.vote.winner ? 'Sujet retenu · <strong>'+h(s.vote.winner)+'</strong>' : 'L’équipe doit encore départager les sujets.'}</p>`;
+      advanceContribution(message);
+      return;
     }
-  } else if (contributionStep === 1) {
+  } else if (step === 'question') {
+    if (!canContribute('question',s)) { advanceContribution(message); return; }
     title = 'As-tu une question pour le cours ?';
-    body = s?.threadsOpen ? `<p>Sujet retenu · <strong>${h(s.vote.winner)}</strong></p>${contributionForm('question',s.id)}` :
-      `<p>${s?.vote.winner ? 'Les questions sont fermées pour cette séance.' : 'Tu pourras poser ta question dès que le sujet sera choisi.'}</p>`;
-  } else {
-    title = 'Une idée pour un prochain cours ?';
-    body = `<p>Propose un sujet, un format ou un intervenant à l’équipe Moadon.</p>${contributionForm('idea')}`;
+    body = `<p>Sujet retenu · <strong>${h(s.vote.winner)}</strong></p>${contributionForm('question',s.id)}`;
   }
-  dialog.innerHTML = `<div class="contribution-top"><span>Étape ${contributionStep+1} sur 3</span><button type="button" class="btn outline small" data-contribution="close">Fermer</button></div>
-    <progress value="${contributionStep+1}" max="3" aria-label="Progression"></progress>
+  dialog.innerHTML = `<div class="contribution-header"><div class="contribution-top">
+    <span>${contributionSteps.length > 1 ? `Étape ${contributionStep+1} sur ${contributionSteps.length}` : 'Participation'}</span>
+    <div class="inline">
+      ${!contributionChoice && step !== 'idea' ? '<button type="button" class="btn outline small" data-contribution="next">Passer</button>' : ''}
+      <button type="button" class="btn outline small" data-contribution="close">Fermer</button>
+    </div></div>
+    ${contributionSteps.length > 1 ? `<progress value="${contributionStep+1}" max="${contributionSteps.length}" aria-label="Progression"></progress>` : ''}
+    </div>
     <h2 tabindex="-1" id="contribution-title">${title}</h2>
     ${message ? `<p class="notice" role="status">${h(message)}</p>` : ''}
-    ${body}<p class="contribution-error" role="alert"></p>
-    ${!contributionChoice ? `<div class="contribution-footer"><button type="button" class="btn outline" data-contribution="next">${contributionStep===2?'Terminer':message?'Continuer':'Passer'}</button></div>` : ''}`;
-  if (dialog.open) dialog.querySelector('h2').focus();
+    ${body}<p class="contribution-error" role="alert"></p>`;
+  dialog.scrollTop = 0;
+  if (dialog.open) dialog.querySelector('h2').focus({preventScroll:true});
 }
 async function submitContribution(dialog, button, kind, data, session) {
   if (!['vote','question','idea'].includes(kind)) return;
@@ -348,8 +378,8 @@ async function submitContribution(dialog, button, kind, data, session) {
     contributionChoice = null;
     render();
     if (!dialog.open) return;
-    if (kind === 'vote') renderContribution('Vote confirmé.');
-    if (kind === 'question') { contributionStep++; renderContribution('Ta question a été publiée.'); }
+    if (kind === 'vote') advanceContribution('Vote confirmé. Tu peux modifier ton choix dans Le cours.');
+    if (kind === 'question') advanceContribution('Ta question a été publiée.');
     if (kind === 'idea') { dialog.close(); notify('Ton idée a été envoyée à l’équipe.'); }
   } catch (error) {
     if (dialog.open) dialog.querySelector('.contribution-error').textContent = error.message;
@@ -562,7 +592,7 @@ function render() {
   }
   filterThreads();
   for (const item of main.querySelectorAll('details[data-key]')) item.open = details.includes(item.dataset.key);
-  if (current === 'accueil' && active() && !store.admin) offerContributions(active());
+  if (current === 'accueil' && active() && homeOfferTimer == null) homeOfferTimer = setTimeout(offerContributions,15000);
   if (demo && current === 'admin' && panel === 'audio') attachLocalAudio();
 }
 main.addEventListener('input',event=>{
@@ -617,7 +647,7 @@ main.addEventListener('click',async event=>{
   const s = pageSession();
   if (kind === 'contribute') openContributions();
   else if (kind === 'vote') {
-    const theme = s.vote.eligible[Number(index)];
+    const {theme,round} = target.dataset;
     const dialog = document.createElement('dialog');
     dialog.innerHTML = `<form method="dialog"><h2 id="vote-confirm-title">Confirmer ton vote ?</h2><p>Tu as choisi <strong>${h(theme)}</strong>.</p><div class="inline"><button class="btn outline" value="cancel" autofocus>Revenir</button><button class="btn lime" value="confirm">Confirmer</button></div></form>`;
     dialog.setAttribute('aria-labelledby','vote-confirm-title');
@@ -625,7 +655,7 @@ main.addEventListener('click',async event=>{
     dialog.addEventListener('close',async ()=>{
       const confirmed = dialog.returnValue === 'confirm';
       dialog.remove();
-      if (confirmed && await change('vote',{theme,round:s.vote.round},s.id)) main.querySelector('[data-do="vote"][aria-pressed="true"]')?.focus();
+      if (confirmed && await change('vote',{theme,round:Number(round)},session)) main.querySelector('[data-do="vote"][aria-pressed="true"]')?.focus();
     },{once:true});
     dialog.showModal();
   }
@@ -664,6 +694,8 @@ main.addEventListener('click',async event=>{
   else await change(kind,{id,comment},session);
 });
 window.addEventListener('hashchange',()=>{
+  clearTimeout(homeOfferTimer);
+  homeOfferTimer = undefined;
   contributionDialog?.close();
   if (path()[0] === 'demo-help') { location.href = '?demo=1#cours'; return; }
   render();

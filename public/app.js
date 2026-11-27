@@ -147,7 +147,7 @@ function topicCards(s, clickable = true) {
 }
 function votePanel(s) {
   const v = s.vote;
-  const next = '<p class="muted">Tu pourras poser ta question dès que le sujet sera choisi.</p>';
+  const next = '<p class="notice"><strong>Patience, le suspense fait partie du cours.</strong> Tu pourras poser ta question dès que le sujet définitif sera choisi.</p>';
   if (v.state === 'scheduled') return panelWrap(`<h2>Les sujets proposés</h2><p>Ouverture du vote le <strong>${date(v.start)}</strong>.</p>${topicCards(s,false)}${next}`);
   if (v.state === 'decision') return panelWrap(`<h2>L’équipe choisit le sujet final</h2><p>Sujets à départager · ${v.eligible.map(h).join(', ')}</p>${next}${voteResults(v)}`);
   if (v.state !== 'open') return panelWrap(voteResults(v));
@@ -191,7 +191,7 @@ function threadsPanel(s, isAdmin = false) {
     </article>`;
   const top = threads.filter(t=>t.support>0).slice(0,5);
   return panelWrap(`<div class="panel-head"><h2>${isAdmin ? 'Questions' : 'Sujet retenu · '+h(s.vote.winner)}</h2><span class="tag ${canPost?'green':''}">Questions ${canPost?'ouvertes':'fermées'}</span></div>
-    ${canPost ? `<details data-key="question-${s.id}"><summary class="btn lime">Poser une question</summary>${contributionForm('question',s.id)}</details>` : ''}
+    ${canPost ? `<details data-key="question-${s.id}"><summary class="btn lime">Pose ta question</summary>${contributionForm('question',s.id)}</details>` : ''}
     ${canPost && !s.after.threads ? timing(s.questionsEnd) : ''}
     ${!isAdmin && !s.archived ? voteResults(s.vote) : ''}
     ${!isAdmin && top.length ? `<h3>Les plus soutenues</h3><div class="question-carousel" aria-label="Questions les plus soutenues" tabindex="0">${top.map(t=>article(t,true)).join('')}</div>` : ''}
@@ -235,7 +235,7 @@ function home() {
     <div class="welcome-copy">
       ${s?.threadsOpen ? `<h1>Pose tes questions !</h1>
       ${questionSubject(s)}
-      <div class="inline">${btn('Poser une question','contribute','lime')}${link('Voir le cours','cours','outline')}</div>` :
+      <div class="inline">${link('Voir le cours','cours','lime')}</div>` :
       `<h1>C’est vous qui choisissez le cours !</h1>
       <p>À chaque séance, Moadon propose plusieurs sujets autour d’un même thème. Vos votes choisissent le sujet, et vos questions donnent sa direction au cours.</p>
       <div class="inline">
@@ -368,7 +368,7 @@ function renderContribution(message = '') {
   } else if (step === 'question') {
     if (!canContribute('question',s)) { advanceContribution(message); return; }
     title = 'Pose tes questions !';
-    body = `${questionSubject(s)}${contributionForm('question',s.id)}`;
+    body = `${questionSubject(s)}${link('Voir le cours','cours','lime')}`;
   }
   dialog.innerHTML = `<div class="contribution-header"><div class="contribution-top">
     <span>${contributionSteps.length > 1 ? `Étape ${contributionStep+1} sur ${contributionSteps.length}` : 'Participation'}</span>
@@ -385,7 +385,7 @@ function renderContribution(message = '') {
   if (dialog.open) dialog.querySelector('h2').focus({preventScroll:true});
 }
 async function submitContribution(dialog, button, kind, data, session) {
-  if (!['vote','question','idea'].includes(kind)) return;
+  if (!['vote','idea'].includes(kind)) return;
   busy = true;
   mutationEpoch++;
   if (button) button.disabled = true;
@@ -396,7 +396,6 @@ async function submitContribution(dialog, button, kind, data, session) {
     render();
     if (!dialog.open) return;
     if (kind === 'vote') advanceContribution('Vote confirmé. Tu peux modifier ton choix dans Le cours.');
-    if (kind === 'question') advanceContribution('Ta question a été publiée.');
     if (kind === 'idea') { dialog.close(); notify('Ton idée a été envoyée à l’équipe.'); }
   } catch (error) {
     if (dialog.open) dialog.querySelector('.contribution-error').textContent = error.message;

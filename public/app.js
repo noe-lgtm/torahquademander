@@ -15,6 +15,7 @@ let contributionDialog;
 let contributionStep = 0;
 let contributionSteps = [];
 let homeOfferTimer;
+let homeOfferKey;
 let contributionChoice = null;
 const seenContributions = new Set();
 let busy = false;
@@ -224,17 +225,23 @@ function courseBanner(s, preview = false) {
     ${!preview && s.description ? `<p>${h(s.description)}</p>` : ''}
   </section>`;
 }
+function questionSubject(s) {
+  return `<p class="question-subject">Sujet retenu <strong>${h(s.vote.winner)}</strong></p>`;
+}
 function home() {
   const s = active();
   const latest = store.sessions.find(session=>session.archived);
   return `<section class="welcome">
     <div class="welcome-copy">
-      <h1>C’est vous qui choisissez le cours !</h1>
+      ${s?.threadsOpen ? `<h1>Pose tes questions !</h1>
+      ${questionSubject(s)}
+      <div class="inline">${btn('Poser une question','contribute','lime')}${link('Voir le cours','cours','outline')}</div>` :
+      `<h1>C’est vous qui choisissez le cours !</h1>
       <p>À chaque séance, Moadon propose plusieurs sujets autour d’un même thème. Vos votes choisissent le sujet, et vos questions donnent sa direction au cours.</p>
       <div class="inline">
         ${s ? link('Découvrir les sujets','cours','lime') : latest?.resources.published ? link('Voir la dernière fiche','ressources/'+latest.id,'lime') : ''}
         ${btn('Participer','contribute','outline')}
-      </div>
+      </div>`}
     </div>
     ${s ? `<div class="welcome-course"><p class="welcome-course-label">Le prochain cours</p>${courseBanner(s,true)}</div>` : ''}
   </section>
@@ -248,8 +255,18 @@ function home() {
   </section>
   ${!s && latest ? panelWrap(`<h2>Dernier cours · ${h(latest.title)}</h2>${link('Revoir le cours','archive/'+latest.id,'outline')}`) : ''}`;
 }
+function contributionKey(s) {
+  return 'torah-contribution-seen:' + s.id + (s.threadsOpen ? ':questions' : '');
+}
+function scheduleContributionOffer(s) {
+  const key = s && contributionKey(s);
+  if (key === homeOfferKey) return;
+  clearTimeout(homeOfferTimer);
+  homeOfferKey = key;
+  if (key) homeOfferTimer = setTimeout(offerContributions,15000);
+}
 function rememberContributions(s) {
-  const key = 'torah-contribution-seen:' + s.id;
+  const key = contributionKey(s);
   if (seenContributions.has(key)) return false;
   seenContributions.add(key);
   try {
@@ -350,8 +367,8 @@ function renderContribution(message = '') {
     }
   } else if (step === 'question') {
     if (!canContribute('question',s)) { advanceContribution(message); return; }
-    title = 'As-tu une question pour le cours ?';
-    body = `<p>Sujet retenu · <strong>${h(s.vote.winner)}</strong></p>${contributionForm('question',s.id)}`;
+    title = 'Pose tes questions !';
+    body = `${questionSubject(s)}${contributionForm('question',s.id)}`;
   }
   dialog.innerHTML = `<div class="contribution-header"><div class="contribution-top">
     <span>${contributionSteps.length > 1 ? `Étape ${contributionStep+1} sur ${contributionSteps.length}` : 'Participation'}</span>
@@ -592,7 +609,7 @@ function render() {
   }
   filterThreads();
   for (const item of main.querySelectorAll('details[data-key]')) item.open = details.includes(item.dataset.key);
-  if (current === 'accueil' && active() && homeOfferTimer == null) homeOfferTimer = setTimeout(offerContributions,15000);
+  if (current === 'accueil') scheduleContributionOffer(active());
   if (demo && current === 'admin' && panel === 'audio') attachLocalAudio();
 }
 main.addEventListener('input',event=>{
@@ -694,8 +711,7 @@ main.addEventListener('click',async event=>{
   else await change(kind,{id,comment},session);
 });
 window.addEventListener('hashchange',()=>{
-  clearTimeout(homeOfferTimer);
-  homeOfferTimer = undefined;
+  scheduleContributionOffer();
   contributionDialog?.close();
   if (path()[0] === 'demo-help') { location.href = '?demo=1#cours'; return; }
   render();

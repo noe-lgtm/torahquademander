@@ -169,3 +169,6 @@ dialog::backdrop{background:#101528aa}
 @media(max-width:760px){.welcome,.how-it-works ol{grid-template-columns:1fr}.welcome{gap:22px;min-height:0}.welcome-course{padding:12px}.how-it-works{padding-top:24px}.toast{top:12px;bottom:auto}.contribution-dialog{padding:15px}}
 @media(max-width:560px){.mast-inner{min-height:0;gap:10px;padding:14px 0 10px}.brand strong{font-size:clamp(.9rem,4vw,1.15rem)}.mast-inner nav{gap:3px}.mast-inner nav a{padding-inline:8px}.welcome{padding:20px}.welcome h1{margin-bottom:13px}.welcome-copy > p{margin-bottom:19px}.upcoming-course{min-height:112px;padding:13px}.upcoming-course h2{font-size:1.55rem}.how-it-works li{padding-block:14px}.how-it-works li::before{top:14px}}
 @media(prefers-reduced-motion:reduce){.welcome::before{animation:none}}
+
+.question-subject{overflow-wrap:anywhere;color:#544629;font-size:.92rem}
+.question-subject strong{display:block;margin-top:3px;color:var(--ink);font-size:clamp(1.2rem,3vw,1.65rem);line-height:1.24}
